@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Garden Cam — Position</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #000;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        }
+
+        #logo-wrap {
+            position: absolute;
+            cursor: grab;
+            user-select: none;
+            transition: opacity 0.6s ease;
+        }
+        #logo-wrap.editing {
+            cursor: grab;
+            outline: 1px dashed rgba(245,132,38,0.5);
+            outline-offset: 8px;
+        }
+        #logo-wrap.editing:active {
+            cursor: grabbing;
+        }
+        #logo-wrap.set {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #logo-img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        /* Resize handles */
+        .handle {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #F58426;
+            border-radius: 50%;
+            opacity: 0;
+            transition: opacity 0.15s;
+            z-index: 10;
+        }
+        #logo-wrap.editing .handle { opacity: 1; }
+
+        .handle-tl { top: -6px;  left: -6px;  cursor: nwse-resize; }
+        .handle-tr { top: -6px;  right: -6px; cursor: nesw-resize; }
+        .handle-bl { bottom: -6px; left: -6px; cursor: nesw-resize; }
+        .handle-br { bottom: -6px; right: -6px; cursor: nwse-resize; }
+
+        #hint {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #F58426;
+            font-size: 0.85em;
+            opacity: 0.5;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        #logo-wrap.set ~ #hint { opacity: 0; }
+    </style>
+</head>
+<body>
+    <div id="logo-wrap" style="width:300px; height:150px;">
+        <img id="logo-img" src="./logo.png" alt="GardenCam Logo" draggable="false">
+        <div class="handle handle-tl" data-dir="tl"></div>
+        <div class="handle handle-tr" data-dir="tr"></div>
+        <div class="handle handle-bl" data-dir="bl"></div>
+        <div class="handle handle-br" data-dir="br"></div>
+    </div>
+    <div id="hint">click logo to edit · drag to move · drag corners to resize · double-click to set</div>
+
+    <script>
+        const wrap = document.getElementById('logo-wrap');
+        const img = document.getElementById('logo-img');
+        const hint = document.getElementById('hint');
+
+        let editing = false;
+        let set = false;
+
+        // --- Enter edit mode on click ---
+        wrap.addEventListener('click', (e) => {
+            if (set) return;
+            if (!editing) {
+                editing = true;
+                wrap.classList.add('editing');
+                hint.textContent = 'drag to move · drag corners to resize · double-click to set';
+            }
+        });
+
+        // --- Set: double-click → disappear ---
+        wrap.addEventListener('dblclick', (e) => {
+            if (set) return;
+            e.stopPropagation();
+            set = true;
+            wrap.classList.add('set');
+            wrap.classList.remove('editing');
+            editing = false;
+            hint.textContent = '';
+        });
+
+        // --- Escape to cancel edit (but not set) ---
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && editing && !set) {
+                editing = false;
+                wrap.classList.remove('editing');
+                hint.textContent = 'click logo to edit · drag to move · drag corners to resize · double-click to set';
+            }
+        });
+
+        // --- Drag to move ---
+        let dragState = null;
+
+        wrap.addEventListener('mousedown', (e) => {
+            if (!editing || set) return;
+            if (e.target.classList.contains('handle')) return; // let handle logic take over
+            e.preventDefault();
+            const rect = wrap.getBoundingClientRect();
+            dragState = {
+                type: 'move',
+                startX: e.clientX,
+                startY: e.clientY,
+                origLeft: rect.left,
+                origTop: rect.top,
+            };
+        });
+
+        // --- Handle drag to resize ---
+        document.querySelectorAll('.handle').forEach(handle => {
+            handle.addEventListener('mousedown', (e) => {
+                if (!editing || set) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const rect = wrap.getBoundingClientRect();
+                dragState = {
+                    type: 'resize',
+                    dir: handle.dataset.dir,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    origLeft: rect.left,
+                    origTop: rect.top,
+                    origWidth: rect.width,
+                    origHeight: rect.height,
+                };
+            });
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!dragState) return;
+
+            if (dragState.type === 'move') {
+                const dx = e.clientX - dragState.startX;
+                const dy = e.clientY - dragState.startY;
+                wrap.style.left = (dragState.origLeft + dx) + 'px';
+                wrap.style.top  = (dragState.origTop  + dy) + 'px';
+            }
+
+            if (dragState.type === 'resize') {
+                const dx = e.clientX - dragState.startX;
+                const dy = e.clientY - dragState.startY;
+                const d = dragState;
+                let newLeft = d.origLeft;
+                let newTop  = d.origTop;
+                let newW    = d.origWidth;
+                let newH    = d.origHeight;
+
+                if (d.dir.includes('l')) { newLeft = d.origLeft + dx; newW = d.origWidth - dx; }
+                if (d.dir.includes('r')) { newW = d.origWidth + dx; }
+                if (d.dir.includes('t')) { newTop  = d.origTop  + dy; newH = d.origHeight - dy; }
+                if (d.dir.includes('b')) { newH = d.origHeight + dy; }
+
+                // Minimum size
+                if (newW < 40) { newW = 40; if (d.dir.includes('l')) newLeft = d.origLeft + d.origWidth - 40; }
+                if (newH < 20) { newH = 20; if (d.dir.includes('t')) newTop  = d.origTop  + d.origHeight - 20; }
+
+                wrap.style.left   = newLeft + 'px';
+                wrap.style.top    = newTop  + 'px';
+                wrap.style.width  = newW + 'px';
+                wrap.style.height = newH + 'px';
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            dragState = null;
+        });
+
+        // --- Center initially ---
+        function centerLogo() {
+            const w = wrap.offsetWidth;
+            const h = wrap.offsetHeight;
+            wrap.style.left = ((window.innerWidth - w) / 2) + 'px';
+            wrap.style.top  = ((window.innerHeight - h) / 2) + 'px';
+        }
+        window.addEventListener('load', centerLogo);
+        window.addEventListener('resize', () => {
+            if (!editing && !set) centerLogo();
+        });
+    </script>
+</body>
+</html>
